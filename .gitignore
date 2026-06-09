@@ -1,0 +1,32 @@
+# Virtual environments
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# Build outputs
+build/
+dist/
+release/
+*.spec
+
+# Runtime data and private config
+config.json
+cookies/*.txt
+douyin_cookies.txt
+downloads/
+logs/
+_debug_curl.html
+要下载的.txt
+细节记录.txt
+
+# IDE / OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,8 @@
+{
+  "download_dir": "",
+  "proxy_enabled": false,
+  "proxy_url": "",
+  "max_concurrent": 2,
+  "download_cover": false,
+  "open_folder_after": false
+}

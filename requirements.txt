@@ -1,0 +1,12 @@
+# Runtime dependencies
+# Python 3.10+ is required by the pinned f2/requests/selenium versions.
+f2==0.0.1.7
+PyQt5==5.15.11
+PyQt-Fluent-Widgets==1.11.2
+requests==2.34.0
+selenium==4.44.0
+undetected-chromedriver==3.5.5
+
+# Optional Playwright fallback for browser login.
+# After uncommenting, run: python -m playwright install chromium
+# playwright==1.59.0
