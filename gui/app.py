@@ -115,7 +115,7 @@ class MainWindow(FluentWindow):
         setTheme(Theme.AUTO)
         setThemeColor('#0078D4')
 
-        self.setWindowTitle('青柠视频下载 ——作者微信z851968（软件相关的问题可直接添加咨询，添加时注明来意）')
+        self.setWindowTitle('青柠视频下载 版本20260614 ——作者微信z851968（软件相关的问题可直接添加咨询，添加时注明来意）')
         self.resize(980, 720)
         self.setMinimumSize(820, 560)
 
@@ -181,6 +181,7 @@ class MainWindow(FluentWindow):
             status_callback=self._status_log,
             settings_getter=self.settings_tab.get_config,
         )
+        self.settings_tab.config_saved.connect(self.download_tab.apply_settings)
 
         self.addSubInterface(self.download_tab, FIF.DOWNLOAD, '下载')
         self.addSubInterface(self.login_tab, FIF.FINGERPRINT, '登录')

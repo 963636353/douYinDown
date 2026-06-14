@@ -183,5 +183,11 @@ class DownloadList(TableWidget):
                 self._remove_row(row, reindex=False)
         self._renumber()
 
+    def clear_all(self):
+        self.setRowCount(0)
+        self.item_data.clear()
+        self._iid_order.clear()
+        self._iid_rows.clear()
+
     def pending_ids(self, statuses):
         return [iid for iid in self._iid_order if self.status(iid) in statuses]

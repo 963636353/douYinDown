@@ -34,6 +34,7 @@ class SettingsTab(QWidget):
     """Page for application settings."""
 
     status_message = pyqtSignal(str)
+    config_saved = pyqtSignal(dict)
 
     def __init__(self, parent, status_callback):
         super().__init__(parent)
@@ -134,7 +135,7 @@ class SettingsTab(QWidget):
             pass
 
     def _save_config(self):
-        self.config = {
+        new_config = {
             'download_dir': self.dir_edit.text(),
             'proxy_enabled': self.proxy_enable_check.isChecked(),
             'proxy_url': self.proxy_entry.text(),
@@ -144,7 +145,9 @@ class SettingsTab(QWidget):
         }
         try:
             with open(CONFIG_PATH, 'w', encoding='utf-8') as file:
-                json.dump(self.config, file, ensure_ascii=False, indent=2)
+                json.dump(new_config, file, ensure_ascii=False, indent=2)
+            self.config = new_config
+            self.config_saved.emit(dict(self.config))
             self.status_message.emit('[OK] 设置已保存')
             self._show_message('设置', '设置已保存')
         except Exception as exc:

@@ -68,7 +68,7 @@ class DownloadTab(QWidget):
     show_info_requested = pyqtSignal(str, str)
     download_started = pyqtSignal(str)
     download_progress = pyqtSignal(str, object, object, str)
-    download_done = pyqtSignal(str, str)
+    download_done = pyqtSignal(str, str, str)
     download_failed = pyqtSignal(str, str, str)
     open_folder_requested = pyqtSignal(str)
 
@@ -87,6 +87,7 @@ class DownloadTab(QWidget):
         self._failed_count = 0
         self._summary_shown = False
         self._dl_progress = {}
+        self._download_success_dirs = []
         self._download_batch_label = '全部下载'
 
         self.status_message.connect(status_callback)
@@ -141,6 +142,14 @@ class DownloadTab(QWidget):
         input_layout.addWidget(BodyLabel('\u753b\u8d28:', input_card), 0, 4, Qt.AlignRight)
         self.quality_combo = ComboBox(input_card)
         self.quality_combo.addItems([label for _, label in QUALITY_PREFERENCES])
+        default_quality_index = next(
+            (
+                index for index, (key, _label) in enumerate(QUALITY_PREFERENCES)
+                if key == 'default'
+            ),
+            0,
+        )
+        self.quality_combo.setCurrentIndex(default_quality_index)
         self.quality_combo.setMinimumWidth(126)
         self.quality_combo.currentIndexChanged.connect(self._apply_quality_to_pending_items)
         self.video_radio.toggled.connect(self._sync_quality_enabled)
@@ -203,10 +212,13 @@ class DownloadTab(QWidget):
         self.dl_all_btn.clicked.connect(self._start_all_downloads)
         self.clear_btn = PushButton(FIF.DELETE, '清除已完成', btn_row)
         self.clear_btn.clicked.connect(self._clear_completed)
+        self.clear_list_btn = PushButton(FIF.DELETE, '清除列表', btn_row)
+        self.clear_list_btn.clicked.connect(self._clear_download_list)
         self.retry_failed_btn = PushButton(FIF.SYNC, '失败重试', btn_row)
         self.retry_failed_btn.clicked.connect(self._retry_failed_downloads)
         btn_layout.addWidget(self.dl_all_btn)
         btn_layout.addWidget(self.clear_btn)
+        btn_layout.addWidget(self.clear_list_btn)
         btn_layout.addWidget(self.retry_failed_btn)
         btn_layout.addStretch(1)
         self.download_status_label = BodyLabel('就绪', btn_row)
@@ -502,7 +514,7 @@ class DownloadTab(QWidget):
         threading.Thread(target=_do_batch_parse, daemon=True).start()
 
     def _add_item(self, info, platform):
-        dl_dir = self.settings_getter().get('download_dir', '') or _DEFAULT_DL_DIR
+        dl_dir = self._download_dir_from_settings()
         media_type = self._selected_media_type()
 
         if media_type == 'audio' and info.audio_url:
@@ -530,6 +542,19 @@ class DownloadTab(QWidget):
             filepath=filepath,
             quality_options=quality_options,
         )
+
+    def _download_dir_from_settings(self, settings=None):
+        settings = settings if settings is not None else self.settings_getter()
+        return settings.get('download_dir', '') or _DEFAULT_DL_DIR
+
+    def apply_settings(self, config):
+        dl_dir = self._download_dir_from_settings(config)
+        for iid, data in self.download_list.item_data.items():
+            if self.download_list.status(iid) not in (STATUS_PENDING, STATUS_FAILED):
+                continue
+            filename = os.path.basename(data.get('filepath') or '')
+            if filename:
+                data['filepath'] = os.path.join(dl_dir, filename)
 
     def _all_parse_done(self):
         self.parse_btn.setEnabled(True)
@@ -564,6 +589,7 @@ class DownloadTab(QWidget):
         self._failed_count = 0
         self._summary_shown = False
         self._dl_progress = {iid: {'down': 0, 'total': 0} for iid in iids}
+        self._download_success_dirs = []
         self._download_batch_label = batch_label
         self._set_download_buttons_enabled(False)
 
@@ -595,6 +621,7 @@ class DownloadTab(QWidget):
 
     def _set_download_buttons_enabled(self, enabled):
         self.dl_all_btn.setEnabled(enabled)
+        self.clear_list_btn.setEnabled(enabled)
         self.retry_failed_btn.setEnabled(enabled)
 
     def _settings_max_concurrent(self):
@@ -648,10 +675,7 @@ class DownloadTab(QWidget):
                 headers = platform.build_download_headers(cookies or {})
 
             download_video(data['video_url'], data['filepath'], headers or {}, progress_cb)
-            self.download_done.emit(iid, title_trunc)
-
-            if self.settings_getter().get('open_folder_after'):
-                self.open_folder_requested.emit(data['filepath'])
+            self.download_done.emit(iid, title_trunc, data['filepath'])
         except Exception as exc:
             self.download_failed.emit(iid, title_trunc, str(exc))
 
@@ -663,10 +687,13 @@ class DownloadTab(QWidget):
         item_pct = f'{int(downloaded * 100 / total)}%' if total else ''
         self.download_list.update_status(iid, STATUS_DOWNLOADING, item_pct)
 
-    def _on_dl_done(self, iid, title_trunc):
+    def _on_dl_done(self, iid, title_trunc, filepath):
         self.download_list.update_status(iid, STATUS_DONE, '100%')
         self._done_count += 1
         self._success_count += 1
+        download_dir = os.path.dirname(filepath)
+        if download_dir and not self._download_success_dirs:
+            self._download_success_dirs.append(download_dir)
         self.status_message.emit(f'[OK] 下载完成: {title_trunc}')
 
         done = self._done_count
@@ -710,6 +737,8 @@ class DownloadTab(QWidget):
             self._success_count,
             self._failed_count,
         )
+        if self.settings_getter().get('open_folder_after') and self._download_success_dirs:
+            self.open_folder_requested.emit(self._download_success_dirs[0])
 
     def _show_download_summary(self, total, success, failed):
         content = f'此次下载任务 {total} 个\n成功 {success} 个\n失败 {failed} 个'
@@ -721,10 +750,16 @@ class DownloadTab(QWidget):
     def _clear_completed(self):
         self.download_list.remove_completed(STATUS_DONE)
 
-    def _open_folder(self, filepath):
+    def _clear_download_list(self):
+        self.download_list.clear_all()
+        self._dl_progress = {}
+        self.progress_panel.set_progress(0, '就绪')
+
+    def _open_folder(self, path):
         import subprocess
 
-        subprocess.Popen(['explorer', '/select,', os.path.normpath(filepath)])
+        if path:
+            subprocess.Popen(['explorer', os.path.normpath(path)])
 
     def _show_error(self, title, content):
         InfoBar.error(
