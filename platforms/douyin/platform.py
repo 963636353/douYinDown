@@ -114,7 +114,8 @@ class DouyinPlatform(BasePlatform):
 
                 if start_time is not None and publish_time is not None and publish_time < start_time:
                     seen_video_ids.add(aweme_id)
-                    should_stop_after_page = True
+                    if not self._is_top_aweme(aweme):
+                        should_stop_after_page = True
                     continue
 
                 try:
@@ -323,6 +324,13 @@ class DouyinPlatform(BasePlatform):
                 timestamp = timestamp // 1000
             return timestamp
         return None
+
+    @staticmethod
+    def _is_top_aweme(detail: dict) -> bool:
+        try:
+            return int((detail or {}).get('is_top') or 0) == 1
+        except (TypeError, ValueError):
+            return False
 
     @staticmethod
     def _first_url(urls):
