@@ -76,17 +76,12 @@ class DouyinPlatform(BasePlatform):
 
         while page < 1000:
             if max_cursor in seen_cursors:
-                break
+                raise RuntimeError(f'主页分页游标重复，解析未完成（已找到 {len(videos)} 个视频）')
             seen_cursors.add(max_cursor)
             page += 1
 
             params = api.build_user_post_params(profile_id, max_cursor=max_cursor, count=20)
-            data = self._signed_get_json(api.API_USER_POST, params, cookies)
-
-            status_code = data.get('status_code')
-            if status_code not in (0, None):
-                status_msg = data.get('status_msg') or data.get('msg') or 'unknown'
-                raise Exception(f'Profile API error: status_code={status_code}, {status_msg}')
+            data = self._get_profile_page(params, cookies, page, len(videos))
 
             should_stop_after_page = False
             for aweme in data.get('aweme_list') or []:
@@ -136,26 +131,48 @@ class DouyinPlatform(BasePlatform):
                 seen_video_ids.add(info.video_id)
                 videos.append(info)
 
-            has_more = bool(data.get('has_more')) and not should_stop_after_page
+            has_more = data['has_more'] in (1, '1') and not should_stop_after_page
             if progress_callback:
                 progress_callback(len(videos), page, has_more)
             if should_stop_after_page or not has_more:
                 break
 
-            next_cursor = data.get('max_cursor')
-            if next_cursor is None:
-                break
-            try:
-                next_cursor = int(next_cursor)
-            except (TypeError, ValueError):
-                break
-            if next_cursor == max_cursor:
-                break
+            next_cursor = self._to_int(data.get('max_cursor'))
+            if next_cursor is None or next_cursor < 0:
+                raise RuntimeError(f'主页第 {page} 页返回无效分页游标，解析未完成（已找到 {len(videos)} 个视频）')
+            if next_cursor in seen_cursors:
+                raise RuntimeError(f'主页第 {page} 页返回重复分页游标，解析未完成（已找到 {len(videos)} 个视频）')
 
             max_cursor = next_cursor
             time.sleep(0.25)
+        else:
+            raise RuntimeError(f'主页达到分页上限，解析未完成（已找到 {len(videos)} 个视频）')
 
         return videos
+
+    def _get_profile_page(self, params: dict, cookies: dict, page: int, found: int) -> dict:
+        # A status_code-only response is not an empty final page. It can occur
+        # with an expired login or a temporary server restriction.
+        for attempt in range(3):
+            data = self._signed_get_json(api.API_USER_POST, params, cookies)
+            if isinstance(data, dict):
+                status_code = data.get('status_code')
+                if status_code not in (0, None):
+                    status_msg = data.get('status_msg') or data.get('msg') or 'unknown'
+                    raise RuntimeError(f'Profile API error: status_code={status_code}, {status_msg}')
+                if (
+                    'aweme_list' in data
+                    and (data['aweme_list'] is None or isinstance(data['aweme_list'], list))
+                    and data.get('has_more') in (0, 1, '0', '1')
+                ):
+                    return data
+            if attempt < 2:
+                time.sleep(attempt + 1)
+
+        raise RuntimeError(
+            f'主页第 {page} 页接口返回不完整，解析未完成（已找到 {found} 个视频）。'
+            '登录可能已失效或接口暂时受限，请重新扫码登录后重试。'
+        )
 
     def _signed_get_json(self, endpoint: str, params: dict, cookies: dict) -> dict:
         params_str = '&'.join([f'{k}={v}' for k, v in params.items()])

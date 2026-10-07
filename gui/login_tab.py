@@ -112,14 +112,14 @@ class LoginTab(QWidget):
             return
 
         cookies = load_cookies(self.platform.name)
-        if cookies and any(k in cookies for k in self.platform.session_cookie_names):
+        if cookies and any(cookies.get(k) for k in self.platform.session_cookie_names):
             self._cookies = cookies
             self._set_status('已登录', '#107C10')
             self.status_message.emit('[OK] Cookie 有效，登录状态正常')
         else:
             self._cookies = None
             self._set_status('未登录', '#C42B1C')
-            self.status_message.emit('[!] 未检测到有效的登录 Cookie')
+            self.status_message.emit('[!] 登录 Cookie 缺失或已过期，请重新扫码登录')
 
     def _open_chrome_download(self):
         url = 'https://www.google.cn/chrome/index.html'

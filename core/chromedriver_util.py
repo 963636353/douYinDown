@@ -1,4 +1,5 @@
 import os
+import json
 import stat
 import zipfile
 import shutil
@@ -172,18 +173,45 @@ def _get_chrome_version(status_callback=None):
     return None
 
 
+def _resolve_chromedriver_version(version, status_callback=None):
+    """Match regular Chrome to the driver release using Google's CfT index."""
+    parts = version.split('.')
+    if len(parts) < 3 or not parts[0].isdigit() or int(parts[0]) < 115:
+        return version
+
+    indexes = (
+        ('latest-patch-versions-per-build.json', 'builds', '.'.join(parts[:3])),
+        ('latest-versions-per-milestone.json', 'milestones', parts[0]),
+    )
+    for filename, collection, key in indexes:
+        try:
+            url = f'https://googlechromelabs.github.io/chrome-for-testing/{filename}'
+            with urllib.request.urlopen(url, timeout=15) as response:
+                data = json.load(response)
+            driver_version = (data.get(collection, {}).get(key) or {}).get('version')
+            if driver_version and driver_version.split('.')[0] == parts[0]:
+                _status(status_callback, f'[*] Chrome {version} 匹配 ChromeDriver {driver_version}')
+                return driver_version
+        except Exception as exc:
+            _status(status_callback, f'[!] 查询 ChromeDriver 版本失败: {exc}')
+
+    _status(status_callback, '[!] 官方索引暂未找到匹配驱动，尝试浏览器原版本号')
+    return version
+
+
 def _download_chromedriver(version, cache_dir, status_callback=None):
     """Download matching ChromeDriver from Google storage. Returns path or None."""
     os.makedirs(cache_dir, exist_ok=True)
     major = version.split('.')[0]
+    driver_version = _resolve_chromedriver_version(version, status_callback)
 
     sources = [
         {
-            'url': f'https://storage.googleapis.com/chrome-for-testing-public/{version}/win32/chromedriver-win32.zip',
+            'url': f'https://storage.googleapis.com/chrome-for-testing-public/{driver_version}/win32/chromedriver-win32.zip',
             'subdir': 'chromedriver-win32',
         },
         {
-            'url': f'https://www.googleapis.com/download/storage/v1/b/chrome-for-testing-public/o/{version}%2Fwin32%2Fchromedriver-win32.zip?alt=media',
+            'url': f'https://www.googleapis.com/download/storage/v1/b/chrome-for-testing-public/o/{driver_version}%2Fwin32%2Fchromedriver-win32.zip?alt=media',
             'subdir': 'chromedriver-win32',
         },
     ]
@@ -195,8 +223,8 @@ def _download_chromedriver(version, cache_dir, status_callback=None):
             _status(status_callback, f'[*] 尝试下载 ChromeDriver: {url[:60]}...')
 
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            resp = urllib.request.urlopen(req, timeout=45)
-            data = resp.read()
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = resp.read()
 
             zip_path = os.path.join(cache_dir, 'chromedriver.zip')
             with open(zip_path, 'wb') as f:

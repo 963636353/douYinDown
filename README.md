@@ -308,6 +308,8 @@ package_release.bat
 
 确认已经安装 Chrome 或 Edge，并安装了依赖。GUI 登录失败时会弹出最后一条错误信息，完整运行日志位于 `logs/app.log`。
 
+ChromeDriver 会先通过 Google 官方版本索引匹配 Chrome 的构建版本，未找到时再匹配同一主版本，避免直接使用浏览器补丁版本号导致下载地址返回 404。
+
 ```bash
 pip install undetected-chromedriver selenium
 ```
@@ -335,6 +337,12 @@ python -m playwright install chromium
 ### 5. 代理设置为什么没有生效
 
 当前设置页能保存 `proxy_enabled` 和 `proxy_url`，但 `requests.get()` 调用尚未接入 `proxies` 参数。如需代理，需要在 `platforms/douyin/platform.py` 和 `core/downloader.py` 的请求处扩展。
+
+### 6. 作者主页只解析出第一页作品
+
+先在「登录」页重新扫码登录，再解析主页。登录过期时，接口可能仍返回第一页公开作品，但后续页只返回 `status_code`，没有作品列表和分页字段。
+
+程序读取 Cookie 时会排除已过期的 Cookie，并在解析前检查登录 Cookie。不完整分页响应会最多请求三次；仍不完整或分页游标异常时，会提示「解析未完成」，不会把已获取的第一页误报为全部作品。要获取全部作品，请确认未勾选「按发布日期筛选」。
 
 ## GitHub 上传前检查
 

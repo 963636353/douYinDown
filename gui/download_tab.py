@@ -420,9 +420,9 @@ class DownloadTab(QWidget):
 
         def _do_batch_parse():
             cookies = load_cookies(platform.name)
-            if not cookies:
+            if not cookies or not any(cookies.get(name) for name in platform.session_cookie_names):
                 self.parse_done_requested.emit()
-                self.show_error_requested.emit('错误', '未登录，请先在“登录”界面登录')
+                self.show_error_requested.emit('错误', '登录 Cookie 缺失或已过期，请在“登录”界面重新扫码登录')
                 return
 
             total = len(urls)

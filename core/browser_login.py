@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from core.base_platform import BasePlatform
 from core.cookie_manager import save_cookies
-from core.chromedriver_util import ensure_chromedriver, find_chrome_executable
+from core.chromedriver_util import ensure_chromedriver, find_chrome_executable, _get_chrome_version
 
 try:
     import undetected_chromedriver as uc
@@ -66,8 +66,9 @@ def perform_browser_login(
     if HAS_PLAYWRIGHT:
         return _login_playwright(platform, status_callback)
 
-    _status(status_callback, '[!] 未安装任何浏览器自动化库')
-    _status(status_callback, '    pip install undetected-chromedriver selenium')
+    _status(status_callback, '[!] 可用的浏览器登录方式均失败，请检查浏览器驱动和网络连接')
+    if not HAS_PLAYWRIGHT:
+        _status(status_callback, '[!] 未安装 playwright，无法使用 Playwright 备用登录')
     return None
 
 
@@ -342,10 +343,13 @@ def _login_undetected(platform: BasePlatform, status_cb) -> Optional[dict]:
                 browser_executable_path=chrome_path,
             )
         else:
-            _status(status_cb, '[*] 尝试由 undetected_chromedriver 自动检测 ChromeDriver...')
+            chrome_version = _get_chrome_version(status_cb)
+            version_main = int(chrome_version.split('.')[0]) if chrome_version else None
+            _status(status_cb, f'[*] 尝试由 undetected_chromedriver 匹配 Chrome {version_main or "未知版本"} 的驱动...')
             driver = uc.Chrome(
                 options=options, headless=False, use_subprocess=True,
                 browser_executable_path=chrome_path,
+                version_main=version_main,
             )
     except Exception as e:
         _status(status_cb, f'[!] uc.Chrome 启动失败: {e}')

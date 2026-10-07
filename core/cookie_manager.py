@@ -20,7 +20,7 @@ def _old_cookie_path(platform_name: str) -> str:
 def load_cookies(platform_name: str):
     """Load cookies from Netscape-format file for a given platform.
 
-    Returns dict of {name: value} or None if file not found.
+    Returns unexpired cookies as {name: value}, or None if file not found.
     """
     filepath = _cookie_path(platform_name)
     if not os.path.exists(filepath):
@@ -30,7 +30,8 @@ def load_cookies(platform_name: str):
 
     jar = MozillaCookieJar(filepath)
     try:
-        jar.load(ignore_expires=True, ignore_discard=True)
+        # Keep session cookies, but never reuse cookies past their expiry date.
+        jar.load(ignore_expires=False, ignore_discard=True)
         return {c.name: c.value for c in jar if c.name}
     except (FileNotFoundError, OSError):
         return None
