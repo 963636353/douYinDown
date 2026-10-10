@@ -72,13 +72,16 @@ class DownloadTab(QWidget):
     download_failed = pyqtSignal(str, str, str)
     open_folder_requested = pyqtSignal(str)
 
-    def __init__(self, parent, platforms, status_callback, settings_getter):
+    def __init__(self, parent, platforms, status_callback, settings_getter, authorization_check=None, download_success_callback=None):
         super().__init__(parent)
         self.setObjectName('downloadInterface')
         self.platforms = {p.name: p for p in platforms}
         self.platform_list = list(self.platforms.values())
         self.status_callback = status_callback
         self.settings_getter = settings_getter
+        self.authorization_check = authorization_check
+        self.download_success_callback = download_success_callback
+        self._authorizing = False
         self._max_workers = self._settings_max_concurrent()
         self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
         self._done_count = 0
@@ -178,6 +181,8 @@ class DownloadTab(QWidget):
         input_layout.addWidget(filter_box, 1, 0, 1, 7)
 
         self.url_text = TextEdit(input_card)
+        # 分享内容可能携带网页配色；链接输入只接收纯文本。
+        self.url_text.setAcceptRichText(False)
         self.url_text.setPlaceholderText('粘贴视频链接、图文链接或作者主页链接，多个链接请每行一个')
         self.url_text.setFixedHeight(112)
         input_layout.addWidget(self.url_text, 2, 0, 1, 6)
@@ -542,6 +547,7 @@ class DownloadTab(QWidget):
             filepath=filepath,
             quality_options=quality_options,
         )
+        self.download_list.item_data[iid]['media_type'] = 'audio' if ext == '.mp3' else info.extra.get('media_type', 'video')
 
     def _download_dir_from_settings(self, settings=None):
         settings = settings if settings is not None else self.settings_getter()
@@ -582,6 +588,18 @@ class DownloadTab(QWidget):
         self._start_download_batch(failed, '失败重试', renumber=False)
 
     def _start_download_batch(self, iids, batch_label, renumber=True):
+        if self._authorizing or not iids:
+            return
+        if self.authorization_check is not None:
+            self._authorizing = True
+            self._set_download_buttons_enabled(False)
+            try:
+                authorized = self.authorization_check('视频、音频及图文下载')
+            finally:
+                self._authorizing = False
+                self._set_download_buttons_enabled(True)
+            if not authorized:
+                return
         self._sync_executor_workers()
         self._total_count = len(iids)
         self._done_count = 0
@@ -675,6 +693,15 @@ class DownloadTab(QWidget):
                 headers = platform.build_download_headers(cookies or {})
 
             download_video(data['video_url'], data['filepath'], headers or {}, progress_cb)
+            media_type = data.get('media_type')
+            is_video = media_type == 'video' or (media_type is None and str(data['filepath']).lower().endswith('.mp4'))
+            if is_video and self.download_success_callback is not None:
+                try:
+                    self.download_success_callback()
+                except Exception:
+                    # 统计写入异常不能把已成功保存的视频改成下载失败。
+                    import logging
+                    logging.getLogger(__name__).warning('视频下载已完成，但本机统计记录暂未保存')
             self.download_done.emit(iid, title_trunc, data['filepath'])
         except Exception as exc:
             self.download_failed.emit(iid, title_trunc, str(exc))

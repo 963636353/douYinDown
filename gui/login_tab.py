@@ -66,7 +66,7 @@ class LoginTab(QWidget):
         self.login_btn.clicked.connect(self._start_login)
         self.clear_btn = PushButton(FIF.DELETE, '清除 Cookie', action_card)
         self.clear_btn.clicked.connect(self._do_clear_cookies)
-        self.verify_btn = PushButton(FIF.SYNC, '验证登录', action_card)
+        self.verify_btn = PushButton(FIF.SYNC, '检查登录信息', action_card)
         self.verify_btn.clicked.connect(self._refresh_status)
         action_layout.addWidget(self.login_btn)
         action_layout.addWidget(self.clear_btn)
@@ -114,8 +114,8 @@ class LoginTab(QWidget):
         cookies = load_cookies(self.platform.name)
         if cookies and any(cookies.get(k) for k in self.platform.session_cookie_names):
             self._cookies = cookies
-            self._set_status('已登录', '#107C10')
-            self.status_message.emit('[OK] Cookie 有效，登录状态正常')
+            self._set_status('已保存登录信息', '#107C10')
+            self.status_message.emit('[OK] 本地登录 Cookie 存在且未过期；实际访问结果以抖音接口为准')
         else:
             self._cookies = None
             self._set_status('未登录', '#C42B1C')

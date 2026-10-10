@@ -4,9 +4,9 @@ from dataclasses import dataclass
 import requests
 
 
-APP_VERSION = '20260614'
+APP_VERSION = '20261010'
 UPDATE_CHECK_URL = (
-    'https://program-control.oss-rg-china-mainland.aliyuncs.com/videoDown.txt'
+    'https://douyindown.secs.cc/videoDown.txt'
 )
 
 

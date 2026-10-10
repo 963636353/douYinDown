@@ -14,6 +14,7 @@ build/
 dist/
 release/
 *.spec
+*.zip
 
 # Runtime data and private config
 config.json
@@ -24,6 +25,26 @@ logs/
 _debug_curl.html
 要下载的.txt
 细节记录.txt
+
+# Payment credentials and private reference source
+.env
+.env.*
+!.env.example
+服务端/支付代码.txt
+服务端/payment_reuse/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.pem
+*.key
+*.p12
+*.pfx
+payment_client.json
+payment_credentials/
+.payment-test/
 
 # IDE / OS files
 .idea/

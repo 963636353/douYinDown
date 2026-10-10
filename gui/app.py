@@ -17,6 +17,8 @@ from qfluentwidgets import (
 
 from core.paths import ensure_runtime_dirs, runtime_path
 from core.update_checker import fetch_update_info, has_new_version
+from gui.about_tab import AboutTab, AUTHOR_WECHAT
+from gui.authorization_tab import AuthorizationTab
 from gui.download_tab import DownloadTab
 from gui.login_tab import LoginTab
 from gui.settings_tab import SettingsTab
@@ -80,11 +82,11 @@ class UpdateCheckFailedDialog(MessageBoxBase):
         self._build_ui()
 
     def _build_ui(self):
-        message = BodyLabel(f'检查更新失败：{self.reason}', self)
+        message = BodyLabel(f'检查更新失败：{self.reason}\n请联系作者微信：{AUTHOR_WECHAT}', self)
         message.setWordWrap(True)
         self.viewLayout.addWidget(message)
 
-        self.yesButton.setText('联系软件窗口顶部标题的客服')
+        self.yesButton.setText('退出软件')
         self.yesButton.clicked.disconnect()
         self.yesButton.clicked.connect(self._quit_application)
         self.hideCancelButton()
@@ -115,7 +117,7 @@ class MainWindow(FluentWindow):
         setTheme(Theme.AUTO)
         setThemeColor('#0078D4')
 
-        self.setWindowTitle('青柠视频下载 版本20260614 ——作者微信z851968（软件相关的问题可直接添加咨询，添加时注明来意）')
+        self.setWindowTitle('青柠视频下载')
         self.resize(980, 720)
         self.setMinimumSize(820, 560)
 
@@ -170,6 +172,8 @@ class MainWindow(FluentWindow):
         platform = self.platforms[0] if self.platforms else None
 
         self.settings_tab = SettingsTab(self, status_callback=self._status_log)
+        self.authorization_tab = AuthorizationTab(self)
+        self.authorization_tab.hide()
         self.login_tab = LoginTab(
             self,
             platform=platform,
@@ -180,12 +184,19 @@ class MainWindow(FluentWindow):
             platforms=self.platforms,
             status_callback=self._status_log,
             settings_getter=self.settings_tab.get_config,
+            authorization_check=self.authorization_tab.ensure_authorized,
+            download_success_callback=self.authorization_tab.record_video_download,
         )
         self.settings_tab.config_saved.connect(self.download_tab.apply_settings)
+        self.about_tab = AboutTab(self)
+        self.authorization_tab.computer_uuid_changed.connect(self.about_tab.set_computer_uuid)
+        if self.authorization_tab.computer_uuid:
+            self.about_tab.set_computer_uuid(self.authorization_tab.computer_uuid)
 
         self.addSubInterface(self.download_tab, FIF.DOWNLOAD, '下载')
         self.addSubInterface(self.login_tab, FIF.FINGERPRINT, '登录')
         self.addSubInterface(self.settings_tab, FIF.SETTING, '设置')
+        self.addSubInterface(self.about_tab, FIF.INFO, '说明')
 
     @pyqtSlot(str)
     def _status_log(self, message):

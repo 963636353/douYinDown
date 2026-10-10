@@ -1,5 +1,8 @@
 import random
 import string
+import hashlib
+import time
+from urllib.parse import parse_qsl, quote_plus, urlencode
 
 from f2.utils.abogus import ABogus, BrowserFingerprintGenerator
 
@@ -9,6 +12,56 @@ _USER_AGENT = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
 
 API_DETAIL = 'https://www.douyin.com/aweme/v1/web/aweme/detail/'
 API_USER_POST = 'https://www.douyin.com/aweme/v1/web/aweme/post/'
+
+# douyin_web SecSDK 项目常量；不是用户或商户密钥。
+_WEB_SIGN_SALT = 'A96D855A08C0A9707F8BEF0D9A527E4E'
+_UIFID_COOKIE_NAMES = ('UIFID', 'UIFID_TEMP', 'UIFIDTEMP', 'uifid', 'uifid_temp', 'uifidtemp')
+
+
+def _encode_query(pairs) -> str:
+    """Match URLSearchParams encoding, including spaces and literal '~'."""
+    return '&'.join(
+        f'{quote_plus(str(key), safe="*").replace("~", "%7E")}='
+        f'{quote_plus(str(value), safe="*").replace("~", "%7E")}'
+        for key, value in pairs
+    )
+
+
+def build_signed_request(params: dict, cookies: dict) -> tuple[str, dict]:
+    """Sign the Web API query using the visitor identity from its own cookies.
+
+    a_bogus and SecSDK are separate signing layers. Keep the final encoded
+    query intact when sending it; never log the query or identity headers.
+    """
+    cookies = cookies or {}
+    params = dict(params)
+    uifid = next((cookies[name] for name in _UIFID_COOKIE_NAMES if cookies.get(name)), '')
+    if uifid:
+        fingerprint = cookies.get('s_v_web_id')
+        if fingerprint:
+            params.update({'verifyFp': fingerprint, 'fp': fingerprint})
+        if cookies.get('msToken'):
+            params['msToken'] = cookies['msToken']
+    query = generate_abogus(urlencode(params))
+    headers = build_headers(cookies)
+    if not uifid:
+        return query, headers
+
+    # Retain order and existing uifid position, and include a_bogus in this layer.
+    pairs = [(key, value) for key, value in parse_qsl(query, keep_blank_values=True)
+             if key not in ('timestamp', 'x-secsdk-web-signature')]
+    pairs = [(key, uifid if key == 'uifid' else value) for key, value in pairs]
+    if not any(key == 'uifid' for key, _ in pairs):
+        pairs.append(('uifid', uifid))
+    timestamp = str(int(time.time()))
+    pairs.append(('timestamp', timestamp))
+    query = _encode_query(pairs)
+    signature = hashlib.md5(
+        f'{uifid}_{timestamp}_{_WEB_SIGN_SALT}_{query}'.encode('utf-8')
+    ).hexdigest()
+    headers.update({'uifid': uifid, 'x-secsdk-web-signature': signature,
+                    'x-secsdk-web-expire': timestamp})
+    return f'{query}&x-secsdk-web-signature={signature}', headers
 
 
 def get_user_agent() -> str:

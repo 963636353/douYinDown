@@ -46,7 +46,27 @@ class DouyinPlatform(BasePlatform):
 
     def get_video_info(self, video_id: str, cookies: dict) -> VideoInfo:
         params = api.build_params(video_id)
-        data = self._signed_get_json(api.API_DETAIL, params, cookies)
+        for attempt in range(3):
+            try:
+                # 每次重试重新生成请求签名，两种链接提取编号后走同一流程。
+                data = self._signed_get_json(api.API_DETAIL, params, cookies)
+                break
+            except requests.HTTPError as exc:
+                response = exc.response
+                if response is None or response.status_code != 403:
+                    raise
+                if 'ArgusSecurityPlugin' in response.text:
+                    raise RuntimeError(
+                        '链接已识别，但抖音拒绝了视频详情请求（403）。'
+                        '接口身份信息或签名未通过校验；请检查是否使用最新客户端。'
+                        '若仍失败，可重新扫码登录更新本地凭据。'
+                    ) from exc
+                if attempt == 2:
+                    raise RuntimeError(
+                        '链接已识别，但抖音拒绝了视频详情请求（403）。'
+                        '该错误不能单凭本地 Cookie 判断原因，请稍后重试。'
+                    ) from exc
+                time.sleep(0.5 * (attempt + 1))
 
         if data.get('status_code') != 0:
             raise Exception(f'API error: status_code={data.get("status_code")}')
@@ -175,9 +195,7 @@ class DouyinPlatform(BasePlatform):
         )
 
     def _signed_get_json(self, endpoint: str, params: dict, cookies: dict) -> dict:
-        params_str = '&'.join([f'{k}={v}' for k, v in params.items()])
-        signed_params = api.generate_abogus(params_str)
-        headers = api.build_headers(cookies)
+        signed_params, headers = api.build_signed_request(params, cookies)
 
         response = requests.get(
             f'{endpoint}?{signed_params}',

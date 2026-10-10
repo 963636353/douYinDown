@@ -92,7 +92,7 @@ try {
     }
 
     Write-Step 'Running compile check'
-    & $Python -m compileall -q main.py core gui platforms
+    & $Python -m compileall -q main.py core gui platforms payment_kit
     if ($LASTEXITCODE -ne 0) {
         throw 'Python compile check failed'
     }
@@ -131,6 +131,10 @@ try {
     Write-Step 'Preparing runtime folders'
     New-Item -ItemType Directory -Force -Path (Join-Path $DistDir 'cookies') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $DistDir 'downloads') | Out-Null
+    $paymentClientConfig = Join-Path $Root 'payment_client.json'
+    if (Test-Path -LiteralPath $paymentClientConfig) {
+        Copy-Item -LiteralPath $paymentClientConfig -Destination (Join-Path $DistDir 'payment_client.json') -Force
+    }
 
     if ($SmokeTest) {
         Write-Step 'Running smoke test'

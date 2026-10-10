@@ -12,7 +12,8 @@
 
 ## 功能特性
 
-- 图形界面：基于 `PyQt-Fluent-Widgets`，左侧导航包含下载、登录和设置三个界面。
+- 图形界面：基于 `PyQt-Fluent-Widgets`，标题为“青柠视频下载”，左侧导航包含下载、登录、设置和说明。说明页展示 `APP_VERSION`、作者微信及教程入口。
+- 使用权限：后台登记电脑身份并校验使用期限，到期后点击下载才显示单个窗口选套餐和扫码付款；付费授权确认后自动继续下载，体验期间不显示授权入口或收费信息。
 - 浏览器扫码登录：优先使用 `undetected_chromedriver`，失败后可降级到 Playwright。
 - Cookie 管理：登录 Cookie 保存为 Netscape 格式，默认路径为 `cookies/douyin_cookies.txt`。
 - 抖音接口签名：通过 `f2.utils.abogus` 生成 `a_bogus` 参数，调用抖音 Web API 获取视频信息。
@@ -23,8 +24,18 @@
 - 画质选择：解析到多个视频源时，可按最高可用、1080p、720p、540p、480p、最低可用或默认源选择。
 - 并发下载：可在设置页配置并发数，下载进度会回写到 GUI 列表和底部进度条。
 - 更新检查：GUI 启动后会请求远程版本配置，发现新版本时弹出下载入口。
+- 浏览器地址栏中的 `/jingxuan?modal_id=作品编号` 与分享短链接共用视频详情流程。Web API 使用本地 Cookie 的 UIFID、同源指纹及 SecSDK 签名；明确的 Argus 身份拒绝不盲目重试，其他临时 403 最多请求三次。
+- 登录页“检查登录信息”只检查本地 Cookie 是否存在、是否超过保存的有效期；实际接口是否允许访问，以解析结果为准。
 - 旧版 CLI 保留：`douyin_downloader.py` 仍可作为命令行版本运行。
 - 平台扩展接口：通过 `BasePlatform` 抽象，后续可按目录约定添加新的平台实现。
+
+
+
+## 修改客户端版本号
+
+.\core\update_checker.py 中的 update_checker.py 值
+
+
 
 ## 当前支持范围
 
@@ -38,6 +49,8 @@
 | 带 `modal_id` 的页面链接 | 支持从查询参数提取作品 ID |
 | 作者主页 `/user/<sec_user_id>` | 支持分页获取公开作品 |
 | 需要登录或权限受限内容 | 需要有效 Cookie，仍可能因权限、删除、风控等原因失败 |
+
+
 
 ## 运行环境
 
@@ -353,6 +366,9 @@ python -m playwright install chromium
 - `config.json`：可能包含你的本机下载路径和代理信息。
 - `downloads/`：下载输出目录，通常不应提交。
 - `build/`、`dist/`、`release/`：本地打包产物，通常不应提交。
+- `.payment-test/`、`服务端/payment_reuse/`：本地联调记录、临时预览和旧参考代码，当前程序不依赖这些目录。
+- `服务端/支付代码.txt`、`.env`、数据库及证书私钥：仅保留在本地或服务器，不能提交商户密钥、订单或用户数据。
+- `payment_credentials/`、`payment_client.json`：本机凭据和连接配置，不提交；连接配置示例使用 `payment_client.example.json`。
 - `_debug_curl.html`、`要下载的.txt`、`细节记录.txt`：历史调试文件，如果包含个人链接或调试内容，建议不要上传。
 
 如果这些文件已经被 Git 跟踪，仅添加 `.gitignore` 不会自动停止跟踪。可以在上传前执行类似命令：
@@ -375,9 +391,30 @@ dist/
 release/
 __pycache__/
 venv/
+.env
+.env.*
+!.env.example
+服务端/支付代码.txt
+服务端/payment_reuse/
+.payment-test/
+payment_credentials/
+payment_client.json
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.pem
+*.key
+*.p12
+*.pfx
+*.zip
 ```
 
 如果需要调整默认配置，请修改 `config.example.json` 或 README 示例，不要提交自己的真实 `config.json`。
+
+保留客户端和服务端源码、`tests/` 回归测试、`docs/` 说明、`服务端/videoDown.txt` 和配置示例。不要删除本机凭据来整理仓库，这些文件已被忽略；删除可能导致原授权身份无法恢复。
 
 ## 已知限制
 
