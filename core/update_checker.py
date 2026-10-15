@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import requests
 
 
-APP_VERSION = '20261010'
+APP_VERSION = '20261015'
 UPDATE_CHECK_URL = (
     'https://douyindown.secs.cc/videoDown.txt'
 )

@@ -3,6 +3,7 @@ param(
     [switch]$OpenReleaseFolder,
     [switch]$SmokeTest,
     [switch]$SkipZip,
+    [switch]$CheckOnly,
     [string]$Version = (Get-Date -Format 'yyyyMMdd-HHmm')
 )
 
@@ -12,6 +13,18 @@ function Write-Step {
     param([string]$Message)
     Write-Host ''
     Write-Host "==> $Message" -ForegroundColor Cyan
+}
+
+function Resolve-BuildPython {
+    param([string]$Root)
+
+    foreach ($environmentName in @('.venv', 'venv')) {
+        $candidate = Join-Path $Root "$environmentName\Scripts\python.exe"
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return $candidate
+        }
+    }
+    throw "Python virtual environment not found. Expected .venv\Scripts\python.exe or venv\Scripts\python.exe under $Root. Create an environment and install requirements.txt first."
 }
 
 function Resolve-InWorkspace {
@@ -66,11 +79,12 @@ function Remove-GeneratedPath {
 }
 
 $exitCode = 0
+$locationPushed = $false
 
 try {
     $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-    $Python = Join-Path $Root 'venv\Scripts\python.exe'
-    $PyInstaller = Join-Path $Root 'venv\Scripts\pyinstaller.exe'
+    Push-Location -LiteralPath $Root
+    $locationPushed = $true
     $AppName = 'DouyinDownloader'
     $DistDir = Join-Path $Root "dist\$AppName"
     $ReleaseDir = Join-Path $Root 'release'
@@ -79,12 +93,31 @@ try {
     $env:PYTHONIOENCODING = 'utf-8'
 
     Write-Step 'Checking Python virtual environment'
-    if (-not (Test-Path -LiteralPath $Python)) {
-        throw "Python venv not found: $Python"
+    $Python = Resolve-BuildPython -Root $Root
+    Write-Host "Using Python: $Python"
+    & $Python -c "import sys; print('Python ' + sys.version.split()[0])"
+    if ($LASTEXITCODE -ne 0) {
+        throw 'The selected Python environment cannot run. Recreate it and install requirements.txt.'
+    }
+
+    Write-Step 'Checking client dependencies'
+    & $Python -c "import importlib.util, sys; names = ['f2', 'PyQt5', 'qfluentwidgets', 'requests', 'selenium', 'undetected_chromedriver']; missing = [name for name in names if importlib.util.find_spec(name) is None]; print('Missing modules: ' + ', '.join(missing) if missing else 'Client dependencies found'); sys.exit(bool(missing))"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Client dependencies are missing. Run: & '$Python' -m pip install -r requirements.txt"
+    }
+
+    & $Python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('PyInstaller') is None)"
+    $hasPyInstaller = $LASTEXITCODE -eq 0
+    if ($CheckOnly) {
+        if (-not $hasPyInstaller) {
+            Write-Host 'PyInstaller is not installed; the normal build will install it automatically.'
+        }
+        Write-Host 'Environment check passed. No packages installed or build outputs changed.' -ForegroundColor Green
+        exit 0
     }
 
     Write-Step 'Installing or verifying PyInstaller'
-    if (-not (Test-Path -LiteralPath $PyInstaller)) {
+    if (-not $hasPyInstaller) {
         & $Python -m pip install pyinstaller
         if ($LASTEXITCODE -ne 0) {
             throw 'Failed to install PyInstaller'
@@ -183,6 +216,9 @@ catch {
     Write-Host "Build failed: $($_.Exception.Message)" -ForegroundColor Red
 }
 finally {
+    if ($locationPushed) {
+        Pop-Location
+    }
     if ($PauseOnExit) {
         Write-Host ''
         Read-Host 'Press Enter to close'

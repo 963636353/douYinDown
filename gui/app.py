@@ -20,12 +20,13 @@ from core.update_checker import fetch_update_info, has_new_version
 from gui.about_tab import AboutTab, AUTHOR_WECHAT
 from gui.authorization_tab import AuthorizationTab
 from gui.download_tab import DownloadTab
+from gui.feedback_tab import FeedbackTab
 from gui.login_tab import LoginTab
 from gui.settings_tab import SettingsTab
 
 
 _TITLE_BAR_HEIGHT = 48
-_NAVIGATION_WIDTH = 110
+_NAVIGATION_WIDTH = 132
 
 
 class UpdateDialog(MessageBoxBase):
@@ -189,6 +190,7 @@ class MainWindow(FluentWindow):
         )
         self.settings_tab.config_saved.connect(self.download_tab.apply_settings)
         self.about_tab = AboutTab(self)
+        self.feedback_tab = FeedbackTab(self)
         self.authorization_tab.computer_uuid_changed.connect(self.about_tab.set_computer_uuid)
         if self.authorization_tab.computer_uuid:
             self.about_tab.set_computer_uuid(self.authorization_tab.computer_uuid)
@@ -197,6 +199,7 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.login_tab, FIF.FINGERPRINT, '登录')
         self.addSubInterface(self.settings_tab, FIF.SETTING, '设置')
         self.addSubInterface(self.about_tab, FIF.INFO, '说明')
+        self.addSubInterface(self.feedback_tab, FIF.FEEDBACK, '问题反馈')
 
     @pyqtSlot(str)
     def _status_log(self, message):

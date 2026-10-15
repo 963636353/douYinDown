@@ -125,7 +125,7 @@ class AuthorizationUITests(unittest.TestCase):
             self.window.show()
             self.app.processEvents()
             tab = self.window.authorization_tab
-            self.assertEqual(self.window.stackedWidget.count(), 4)
+            self.assertEqual(self.window.stackedWidget.count(), 5)
             self.assertEqual(self.window.stackedWidget.indexOf(tab), -1)
             self.assertTrue(tab.isHidden())
             self.assertFalse(tab.label_license_status.isVisible())

@@ -19,7 +19,8 @@
 
 ## 功能特性
 
-- 图形界面：基于 `PyQt-Fluent-Widgets`，左侧导航包含下载、登录、设置和说明。说明页展示版本号、作者微信、电脑身份及教程入口。
+- 图形界面：基于 `PyQt-Fluent-Widgets`，左侧导航包含下载、登录、设置、说明和问题反馈。说明页展示版本号、作者微信、电脑身份及教程入口。
+- 问题反馈：可选择问题或建议、填写描述和选填微信、添加截图。点击提交时自动附带过滤凭据后的近期诊断日志，后台发送至反馈服务；成功弹出提示，失败保留内容并提示失败原因和作者微信。
 - 使用权限：后台登记电脑身份并校验使用期限，到期后点击下载或失败重试才显示单个窗口选套餐和扫码付款；付费授权确认后自动继续下载，体验期间不显示授权入口或收费信息。
 - 浏览器扫码登录：依次尝试 Chrome（`undetected_chromedriver`）、Edge/Selenium、可选 Playwright。
 - Cookie 管理：登录 Cookie 保存为 Netscape 格式，默认路径为 `cookies/douyin_cookies.txt`。
@@ -54,6 +55,8 @@
 ![主界面](images/01.png)
 ![登录](images/02.png)
 ![设置](images/03.png)
+![设置](images/04.png)
+![设置](images/05.png)
 
 ## 运行环境
 
@@ -102,7 +105,7 @@ source venv/Scripts/activate
 .\.venv\Scripts\Activate.ps1
 ```
 
-不激活也可以通过 `.\.venv\Scripts\python.exe main.py` 直接启动。`venv` 和 `.venv` 都是环境目录名称，后续运行和安装依赖时应使用实际存在的环境。打包脚本目前固定使用 `venv`，具体见[打包发布](#打包发布)。
+不激活也可以通过 `.\.venv\Scripts\python.exe main.py` 直接启动。`venv` 和 `.venv` 都是环境目录名称，后续运行和安装依赖时应使用实际存在的环境。打包脚本优先使用 `.venv`，不存在时使用 `venv`，具体见[打包发布](#打包发布)。
 
 ### 2. 安装依赖
 
@@ -269,12 +272,16 @@ GUI 默认从 `https://douyindown.secs.cc/videoDown.txt` 获取更新信息，�
 │   ├── downloader.py               # 流式下载和进度回调
 │   ├── paths.py                    # 源码运行和 exe 运行时路径
 │   ├── payment_config.py           # 支付连接配置和本机凭据路径
+│   ├── feedback/                   # 反馈协议、附件限制、诊断日志和提交服务
 │   └── update_checker.py           # 远程版本检查
 ├── gui/                            # QFluentWidgets GUI
 │   ├── app.py                      # 主窗口、左侧导航和状态栏
 │   ├── about_tab.py                # 说明页：版本、作者、电脑身份和教程
 │   ├── authorization_tab.py        # 后台授权校验、电脑登记和下载统计，不加入导航
 │   ├── download_tab.py             # 链接解析、下载队列、并发下载
+│   ├── feedback_tab.py             # 问题反馈表单与提交状态
+│   ├── feedback_worker.py          # 后台任务和主线程结果通知
+│   ├── feedback_dialogs.py         # 反馈成功提示窗口
 │   ├── login_tab.py                # 登录状态和 Cookie 操作
 │   ├── payment_dialog.py           # 到期后的套餐选择与扫码支付窗口
 │   ├── settings_tab.py             # 设置页和 config.json 编辑
@@ -428,6 +435,7 @@ python -m unittest discover -s tests -v
 
 | 文档 | 适用场景 |
 | --- | --- |
+| [问题反馈接入](docs/问题反馈接入.md) | 反馈模块分工、接口地址、诊断日志、上传限制及测试方式。 |
 | [服务端说明](服务端/README.md) | 安装和启动服务端、配置支付、修改套餐、查看接口及本机演示流程。 |
 | [统计更新部署](docs/统计更新部署.md) | 升级用户统计、迁移数据库、保留电脑身份和旧授权。 |
 | [更新信息部署](docs/更新信息部署.md) | 部署更新接口、维护版本号和下载地址；统计更新尚未部署时先完成统计升级。 |
@@ -439,7 +447,7 @@ python -m unittest discover -s tests -v
 
 项目包含 Windows 下的 PyInstaller 打包脚本。源码调试直接运行 `python main.py` 即可，需要发布时再打包。
 
-脚本目前固定读取项目根目录 `venv\Scripts\python.exe` 和该环境中的 PyInstaller，不会自动使用已激活的 `.venv`。如果只有 `.venv/`，需按[快速开始](#快速开始)创建 `venv/` 并安装客户端依赖后再运行脚本；不要直接重命名已有环境。
+脚本自动查找项目内的 Python 环境，优先使用 `.venv\Scripts\python.exe`，不存在时使用 `venv\Scripts\python.exe`。无需手动激活或重命名环境；如果两者都有，使用 `.venv`。脚本显示实际使用的 Python 路径，检查解释器和客户端依赖，并通过同一个 Python 安装和运行 PyInstaller。
 
 ```powershell
 .\build_exe.ps1
@@ -453,7 +461,7 @@ package_release.bat
 
 脚本在缺少 PyInstaller 时自动安装，执行编译检查后清理旧的 `build/` 和 `dist/`，生成 `dist/DouyinDownloader/`，默认将 zip 保存到 `release/`。本机 `payment_client.json` 存在时会复制到客户端发布目录；服务端单独部署，`docs/` 和 `tests/` 不作为客户端运行目录复制。`build/`、`dist/`、`release/` 和自动生成的 `.spec` 文件均属于本地构建产物，默认不提交。
 
-可选参数：`-SkipZip` 跳过压缩，`-SmokeTest` 启动生成的程序做短暂检查。后者会实际启动客户端并执行正常联网流程，只在需要时使用。
+可选参数：`-CheckOnly` 只检查环境和依赖，不安装 PyInstaller、不清理或生成构建产物；`-SkipZip` 跳过压缩；`-SmokeTest` 启动生成的程序做短暂检查。后者会实际启动客户端并执行正常联网流程，只在需要时使用。
 
 ## 常见问题
 
@@ -508,7 +516,7 @@ python -m pip install -r requirements.txt
 
 ### 9. 为什么打包提示找不到 Python 环境
 
-当前打包脚本固定使用 `venv/`。如果实际只有 `.venv/`，源码运行仍可使用它，但打包前需要创建脚本要求的 `venv/` 并安装客户端依赖。详细说明见[打包发布](#打包发布)。
+脚本会依次查找项目内的 `.venv/` 和 `venv/`，并显示选中的 Python 路径。若都不存在，按快速开始创建环境并安装 `requirements.txt`；若提示缺少依赖，在选中环境内安装客户端依赖。可以先运行 `.\build_exe.ps1 -CheckOnly` 检查，详细说明见[打包发布](#打包发布)。
 
 ## GitHub 上传前检查
 
