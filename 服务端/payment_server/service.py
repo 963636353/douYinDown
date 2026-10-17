@@ -25,46 +25,71 @@ def token_hash(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def is_computer_uuid(value):
+    try:
+        return uuid.UUID(value).version == 5
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 class PaymentService:
     def __init__(self, database, settings, gateway):
         self.db, self.settings, self.gateway = database, settings, gateway
 
-    def register(self, device_id, token=None):
-        now, token = utcnow(), token or secrets.token_urlsafe(32)
+    @staticmethod
+    def _bind_computer(session, device, computer_uuid):
+        if device.device_id == computer_uuid:
+            return
+        if is_computer_uuid(device.device_id):
+            raise HTTPException(409, "电脑身份不匹配，请联系客服恢复授权")
+        collision = session.exec(select(Device).where(Device.device_id == computer_uuid)).first()
+        if collision:
+            raise HTTPException(409, "发现两条已有用户记录，请联系客服关联原授权")
+        orders = session.exec(select(Order).where(Order.device_id == device.device_id)).all()
+        for order in orders:
+            order.device_id = computer_uuid
+            session.add(order)
+        device.device_id = computer_uuid
+        session.add(device)
+
+    def register(self, device_id, token=None, legacy_device_id=None):
+        now = utcnow()
+        computer = is_computer_uuid(device_id)
+        if computer:
+            device_id = uuid.UUID(device_id).hex
+        # 只有早期随机编号客户端仍需返回令牌；新版 UUID 客户端不生成令牌。
+        if not computer and token is None:
+            token = secrets.token_urlsafe(32)
         with self.db.write() as session:
+            if legacy_device_id and legacy_device_id != device_id:
+                if not computer or is_computer_uuid(legacy_device_id):
+                    raise HTTPException(409, "不能将其他电脑身份关联至本机")
+                legacy = session.exec(select(Device).where(Device.device_id == legacy_device_id)).first()
+                if legacy:
+                    self._bind_computer(session, legacy, device_id)
+                    return {"deviceId": device_id}
             existing = session.exec(select(Device).where(Device.device_id == device_id)).first()
             if existing:
-                if not secrets.compare_digest(existing.token_hash, token_hash(token)):
-                    raise HTTPException(409, "设备已登记，需要原凭据；凭据丢失时请联系客服恢复")
-                return {"deviceId": device_id, "deviceToken": token}
+                if not computer and not secrets.compare_digest(existing.token_hash, token_hash(token)):
+                    raise HTTPException(409, "旧版设备编号需要原凭据，请升级至 UUID 版本")
+                # UUID 是唯一身份依据；不更新原令牌哈希、试用或授权期限。
+                return {"deviceId": device_id, **({"deviceToken": token} if token else {})}
             # UUID 关联已提交但响应丢失时，原令牌仍能找回已关联的身份。
-            canonical = session.exec(select(Device).where(Device.token_hash == token_hash(token))).first()
+            canonical = (session.exec(select(Device).where(Device.token_hash == token_hash(token))).first()
+                         if token else None)
             if canonical:
                 return {"deviceId": canonical.device_id, "deviceToken": token}
-            session.add(Device(device_id=device_id, token_hash=token_hash(token),
+            # 保留旧表 NOT NULL/UNIQUE 字段，避免重建线上用户表；占位值不用于认证。
+            session.add(Device(device_id=device_id, token_hash=token_hash(token) if token else "uuid-only:" + uuid.uuid4().hex,
                                first_seen=now, last_seen=now,
                                expires_at=now + timedelta(days=self.settings.trial_days)))
-        return {"deviceId": device_id, "deviceToken": token}
+        return {"deviceId": device_id, **({"deviceToken": token} if token else {})}
 
     def startup(self, owner, computer_uuid):
         now = utcnow()
         with self.db.write() as session:
             device = session.exec(select(Device).where(Device.device_id == owner)).one()
-            if owner != computer_uuid:
-                try:
-                    bound = uuid.UUID(owner).version == 5
-                except ValueError:
-                    bound = False
-                if bound:
-                    raise HTTPException(409, "电脑身份不匹配，请联系客服恢复授权")
-                collision = session.exec(select(Device).where(Device.device_id == computer_uuid)).first()
-                if collision:
-                    raise HTTPException(409, "电脑身份已登记，请使用原凭据或联系客服恢复授权")
-                orders = session.exec(select(Order).where(Order.device_id == owner)).all()
-                for order in orders:
-                    order.device_id = computer_uuid
-                    session.add(order)
-                device.device_id = computer_uuid
+            self._bind_computer(session, device, computer_uuid)
             device.last_opened_at = now
             session.add(device)
             session.flush()
@@ -106,6 +131,24 @@ class PaymentService:
             device = session.exec(select(Device).where(Device.token_hash == token_hash(token))).first()
             if device is None:
                 raise HTTPException(401, "设备令牌无效")
+            return device.device_id
+
+    def identify(self, computer_uuid, legacy_token=None):
+        """新版只认 UUID；有效旧令牌仅用于首次关联旧随机编号。"""
+        try:
+            parsed = uuid.UUID(computer_uuid)
+            if parsed.version != 5:
+                raise ValueError()
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise HTTPException(422, "需要有效的电脑 UUID") from exc
+        with Session(self.db.engine) as session:
+            if legacy_token:
+                legacy = session.exec(select(Device).where(Device.token_hash == token_hash(legacy_token))).first()
+                if legacy and not is_computer_uuid(legacy.device_id):
+                    return legacy.device_id
+            device = session.exec(select(Device).where(Device.device_id == parsed.hex)).first()
+            if device is None:
+                raise HTTPException(404, "电脑尚未登记，请重新启动软件")
             return device.device_id
 
     def license(self, device_id):

@@ -151,14 +151,16 @@ class PaymentGuiTests(unittest.TestCase):
         dialog.pay_thread = None
         dialog.deleteLater()
 
-    def test_concurrent_first_install_cannot_overwrite_device_credentials(self):
+    def test_concurrent_first_install_uses_same_uuid_without_credentials(self):
         from concurrent.futures import ThreadPoolExecutor
+        import uuid
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "identity.json"
             with ThreadPoolExecutor(max_workers=4) as pool:
-                identities = list(pool.map(lambda _: DeviceIdentity(path, self.config.api_base), range(8)))
+                identities = list(pool.map(lambda _: DeviceIdentity(path, self.config.api_base,
+                                  device_id=uuid.uuid5(uuid.NAMESPACE_URL, "gui-computer").hex), range(8)))
             self.assertEqual(len({identity.device_id for identity in identities}), 1)
-            self.assertEqual(len({identity.token for identity in identities}), 1)
+            self.assertFalse(path.exists())
 
     def test_only_successful_video_downloads_record_count_in_download_worker(self):
         record = Mock()

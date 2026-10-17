@@ -99,11 +99,13 @@ class UpdateInfoTests(unittest.TestCase):
             with self.assertRaises(requests.HTTPError):
                 fetch_update_info()
 
-    def test_version_comparison_retains_existing_behavior(self):
+    def test_version_comparison_never_prompts_to_downgrade_test_build(self):
         with patch("core.update_checker.requests.get", side_effect=self.bridge):
             self.write(dict(self.data, version_number=APP_VERSION))
             self.assertFalse(has_new_version(fetch_update_info()))
             self.write(dict(self.data, version_number="20261009"))
+            self.assertFalse(has_new_version(fetch_update_info()))
+            self.write(dict(self.data, version_number=str(int(APP_VERSION) + 1)))
             self.assertTrue(has_new_version(fetch_update_info()))
 
 

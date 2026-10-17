@@ -75,8 +75,11 @@ class AuthorizationTab(QWidget):
             if not self.computer_uuid:
                 self.computer_uuid_changed.emit('')
             self._configuration_error = str(exc)
-            message = str(exc) if isinstance(exc, (PaymentError, ValueError)) else "本机使用凭据异常，请联系客服"
+            message = str(exc) if isinstance(exc, (PaymentError, ValueError)) else "本机身份读取异常，请联系客服"
             self.label_license_status.setText("授权状态：" + message)
+            log_status = getattr(self.window(), "_status_log", None)
+            if callable(log_status):
+                log_status("[!] 使用状态初始化失败：" + message)
             return False
         finally:
             self._set_busy(False)

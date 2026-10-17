@@ -25,12 +25,13 @@ class PaymentAPI:
         with self.identity.lock:
             if self.identity.registered:
                 return
+            payload = {"deviceId": self.identity.computer_uuid}
+            if self.identity.legacy_device_id:
+                payload["legacyDeviceId"] = self.identity.legacy_device_id
             data = self._object(self._request("POST", "/register", timeout=self.config.request_timeout,
-                               payload={"deviceId": self.identity.device_id, "deviceToken": self.identity.token}))
-            if data.get("deviceId") not in {self.identity.device_id, self.identity.computer_uuid} or data.get("deviceToken") != self.identity.token:
+                                             payload=payload))
+            if data.get("deviceId") != self.identity.computer_uuid:
                 raise PaymentError("设备登记响应不匹配")
-            if data["deviceId"] != self.identity.device_id:
-                self.identity.bind(data["deviceId"])
             self.identity.registered = True
 
     def startup(self):
@@ -60,7 +61,6 @@ class PaymentAPI:
             self._ensure_registered()
             if path != "/startup":
                 self._ensure_startup()
-            kwargs["headers"]["Authorization"] = "Bearer " + self.identity.token
         if payload is not None:
             kwargs["json"] = payload
         try:

@@ -5,6 +5,7 @@ import io
 import sys
 import tempfile
 import unittest
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
@@ -276,7 +277,8 @@ class PaymentServerTests(unittest.TestCase):
     def test_client_registration_payment_and_persistent_identity_round_trip(self):
         path = Path(self.temporary.name) / "client.json"
         config = PaymentConfig(api_base="http://127.0.0.1:3006/api/pc")
-        identity = DeviceIdentity(path, config.api_base)
+        computer_uuid = uuid.uuid5(uuid.NAMESPACE_URL, "round-trip-computer").hex
+        identity = DeviceIdentity(path, config.api_base, device_id=computer_uuid)
         api = PaymentAPI(config, identity)
         service = LicenseService(api, config, identity.device_id)
 
@@ -293,11 +295,11 @@ class PaymentServerTests(unittest.TestCase):
             self.assertEqual(self.notify(self.notification(order["orderId"])), "SUCCESS")
             self.assertEqual(api.get_order_status(order["orderId"])["status"], "SUCCESS")
             self.assertTrue(service.refresh_license())
-            restored = DeviceIdentity(path, config.api_base)
+            restored = DeviceIdentity(path, config.api_base, device_id=computer_uuid)
             self.assertEqual(restored.device_id, identity.device_id)
-            self.assertEqual(restored.token, identity.token)
+            self.assertFalse(path.exists())
             self.assertTrue(LicenseService(PaymentAPI(config, restored), config, restored.device_id).refresh_license())
-        self.assertNotIn(TEST_KEY, path.read_text())
+        self.assertFalse(path.exists())
 
 
 class ProtocolTests(unittest.TestCase):

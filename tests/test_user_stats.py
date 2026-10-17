@@ -163,7 +163,8 @@ class UserStatsTests(unittest.TestCase):
         self.startup()
         expiry = self.device().expires_at
         response = self.client.post("/api/pc/register", json={"deviceId": self.uuid})
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json(), {"deviceId": self.uuid})
         self.assertEqual(self.device().expires_at, expiry)
 
     def test_client_recovers_migration_with_lost_response_and_no_new_trial(self):
@@ -194,7 +195,7 @@ class UserStatsTests(unittest.TestCase):
         with patch("payment_kit.api.requests.request", side_effect=bridge):
             with self.assertRaises(PaymentError):
                 api.startup()
-            restored = DeviceIdentity(path, config.api_base, device_id=self.uuid)
+            restored = DeviceIdentity(path, config.api_base, device_id=self.uuid, legacy_path=legacy)
             api = PaymentAPI(config, restored)
             api.startup()
             api.get_license(self.old_id)
@@ -205,9 +206,9 @@ class UserStatsTests(unittest.TestCase):
         self.assertEqual(self.device().first_seen, before.first_seen)
         self.assertEqual(self.device().expires_at, before.expires_at)
         self.assertEqual(restored.device_id, self.uuid)
-        self.assertEqual(json.loads(path.read_text())["deviceId"], self.uuid)
+        self.assertFalse(path.exists())
         legacy.unlink()
-        self.assertEqual(DeviceIdentity(path, config.api_base, device_id=self.uuid).token, self.token)
+        self.assertEqual(DeviceIdentity(path, config.api_base, device_id=self.uuid).device_id, self.uuid)
 
     def test_outbox_preserves_failed_increment_and_retries_after_restart(self):
         api = Mock()

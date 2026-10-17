@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import requests
 
 
-APP_VERSION = '20261015'
+APP_VERSION = '20261017'
 UPDATE_CHECK_URL = (
     'https://douyindown.secs.cc/videoDown.txt'
 )
@@ -48,4 +48,8 @@ def fetch_update_info(url: str = UPDATE_CHECK_URL, timeout: int = 5) -> UpdateIn
 
 
 def has_new_version(update_info: UpdateInfo) -> bool:
-    return bool(update_info.version_number and update_info.version_number != APP_VERSION)
+    remote = update_info.version_number
+    # 日期数字版本只提示更高版本，避免测试新版被旧的线上配置引导降级。
+    if remote.isdigit() and APP_VERSION.isdigit():
+        return int(remote) > int(APP_VERSION)
+    return bool(remote and remote != APP_VERSION)

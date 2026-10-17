@@ -218,13 +218,13 @@ CLI 版本主要面向单链接交互下载；GUI 版本功能更完整，推荐
 
 服务地址选择顺序为：非空环境变量 `QINGNING_PAYMENT_API_BASE` → 本机配置中的 `api_base` → 代码默认地址。正式远程服务使用 HTTPS，HTTP 仅供本机调试。微信商户配置保存在服务端，不放入客户端连接文件。
 
-Windows 电脑身份、设备令牌和下载待上报队列保存在 `%LOCALAPPDATA%\QingningVideoDownloader\`。首次升级会导入原软件目录 `payment_credentials/` 的旧凭据；升级前不要删除旧凭据，全部凭据丢失时需要联系客服恢复。迁移说明见[统计更新部署](docs/统计更新部署.md)。
+Windows 电脑身份缓存和下载待上报队列保存在 `%LOCALAPPDATA%\QingningVideoDownloader\`。20261017 起仅用稳定的电脑 UUID 识别用户，不再生成、保存或提交设备令牌；已有 UUID 用户丢失旧凭据后仍沿用原授权。早期随机编号用户升级时只读旧 `payment_credentials/` 中的设备编号，关联并保留原订单和授权。部署说明见 [UUID 身份更新部署](docs/UUID身份更新部署.md)。
 
 ### 更新信息
 
 GUI 默认从 `https://douyindown.secs.cc/videoDown.txt` 获取更新信息，地址由 [core/update_checker.py](core/update_checker.py) 中的 `UPDATE_CHECK_URL` 设置，独立于支付 API 地址。
 
-当前判断方式是远程 `version_number` 与本地 `APP_VERSION` **不相等**，并未比较版本大小。普通更新可选择暂不升级；强制更新会在更新窗口关闭后退出。请求失败或返回内容无法解析时，会显示“检查更新失败”窗口并退出。版本维护和服务端文件修改分别见[维护与测试](#维护与测试)及[更新信息部署](docs/更新信息部署.md)。
+数字日期版本只在远程 `version_number` 大于本地 `APP_VERSION` 时提示更新，避免测试新版被线上旧配置引导降级；非数字版本保留不相等时提示的兼容行为。普通更新可选择暂不升级；强制更新会在更新窗口关闭后退出。请求失败或返回内容无法解析时，会显示“检查更新失败”窗口并退出。版本维护和服务端文件修改分别见[维护与测试](#维护与测试)及[更新信息部署](docs/更新信息部署.md)。
 
 ## 目录结构
 
@@ -533,7 +533,7 @@ python -m pip install -r requirements.txt
 
 仅添加忽略规则不会停止跟踪已经提交过的文件。如检查发现私有文件已被 Git 跟踪，应按实际路径用 `git rm --cached`（目录使用 `git rm -r --cached`）停止跟踪；该操作保留本机文件，已提交的历史内容仍需另行处理。
 
-本机授权数据位于用户目录，旧版凭据也可能保存在软件目录的 `payment_credentials/` 中。不要删除凭据来整理仓库，删除可能导致原授权身份无法恢复。
+本机电脑身份缓存位于用户目录。早期随机编号用户首次升级前应保留旧 `payment_credentials/` 用于关联；已经关联电脑 UUID 的用户不再依赖这些凭据文件。
 
 `config.example.json` 仅是示例，修改它不会自动改变程序默认值；实际默认值在 `gui/settings_tab.py` 的 `DEFAULT_CONFIG` 中。修改程序默认设置时同步更新示例与 README，不提交自己的真实配置。
 

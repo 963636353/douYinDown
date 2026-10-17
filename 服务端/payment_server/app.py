@@ -24,6 +24,7 @@ class Registration(BaseModel):
     model_config = ConfigDict(extra="forbid")
     deviceId: DeviceId
     deviceToken: Annotated[str, Field(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")] | None = None
+    legacyDeviceId: DeviceId | None = None
 
 
 class NewOrder(BaseModel):
@@ -79,7 +80,12 @@ def create_app(settings=None, gateway=None):
         # 默认验证错误可能包含原请求值；避免回显设备令牌。
         return JSONResponse({"detail": "请求参数不符合接口要求"}, status_code=422)
 
-    def current_device(authorization: Annotated[str | None, Header()] = None):
+    def current_device(authorization: Annotated[str | None, Header()] = None,
+                       x_device_uuid: Annotated[str | None, Header()] = None):
+        if x_device_uuid is not None:
+            token = authorization[7:] if authorization and authorization.startswith("Bearer ") else None
+            return service.identify(x_device_uuid, token)
+        # 兼容更早没有 UUID 请求头的已安装客户端。
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(401, "需要设备令牌")
         return service.authenticate(authorization[7:])
@@ -126,7 +132,7 @@ def create_app(settings=None, gateway=None):
 
     @app.post("/api/pc/register", status_code=201)
     def register(body: Registration):
-        return service.register(body.deviceId, body.deviceToken)
+        return service.register(body.deviceId, body.deviceToken, body.legacyDeviceId)
 
     @app.get("/api/pc/plans")
     def plans():

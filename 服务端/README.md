@@ -6,7 +6,7 @@
 
 - 微信 APIv2 Native 扫码下单，二维码以 PNG Base64 返回。
 - 套餐、订单状态、授权查询和支付回调。
-- 电脑 UUID 登记及令牌认证；Windows 优先使用 SMBIOS UUID，备用 MachineGuid，凭据保存到用户目录，重新下载软件不重置试用。
+- 电脑 UUID 登记和身份识别；Windows 优先使用 SMBIOS UUID，备用 MachineGuid，新版不再依赖令牌，重新下载软件不重置试用。保留旧客户端令牌接口兼容，升级见 [UUID 身份更新部署](../docs/UUID身份更新部署.md)。
 - 默认 3 天试用；付费续期从当前到期时间与现在中较晚的时间开始计算。
 - 支付金额、商户、AppID、币种及签名校验；回调必须明确为成功。
 - 原子更新订单与授权；同一付款重复通知不重复加时，并发续费不会丢失天数。
@@ -97,21 +97,21 @@ Remove-Item Env:PAYMENT_TRIAL_DAYS -ErrorAction SilentlyContinue
 
 ## 接口约定
 
-旧的四个客户端接口路径与主要响应字段保留，新服务额外要求设备令牌。
+保留原接口路径。20261017 起新版通过 `X-Device-UUID` 识别用户，无需设备令牌；仅兼容旧客户端时使用原 Bearer 令牌。
 
-1. `POST /api/pc/register`：提交 `deviceId` 和客户端预先生成的随机 `deviceToken`（至少 43 字符）；登记前客户端已保存凭据，响应丢失可安全重试。返回 `deviceId`、`deviceToken`。已有设备只有相同令牌可以重复登记，不能通过编号重新领取令牌。
+1. `POST /api/pc/register`：新版提交电脑 UUIDv5 `deviceId`，返回 `deviceId`。同 UUID 重复登记沿用原用户，不重置试用或付费授权。可选 `legacyDeviceId` 用于关联早期随机设备编号并迁移其订单；两条已有记录冲突时返回 409，不自动合并。旧客户端仍可提交 `deviceToken` 并收到原样返回值；已有 UUID 不再校验令牌是否一致，原数据库令牌哈希保留。
 2. `GET /api/pc/plans`：公开套餐数组，`price` 为人民币元的字符串。
 3. `GET /api/pc/license/{deviceId}`：返回布尔值 `valid`、带 UTC 时区的 `expireTime`、`status`、`isPaid`、`demo`。`status` 为 trial/active/expired/disabled。`isPaid` 表示有成功付款记录，使用权限仍以 `valid` 为准。
 4. `POST /api/pc/create-order`：提交 `deviceId`、`planId`，返回 `success`、`orderId`、二维码图片 `qrcode`、订单 `expireTime` 和 `demo`。
 5. `GET /api/pc/order-status/{orderId}`：返回 PENDING/SUCCESS/CLOSED/FAILED，仅订单所属设备可查。
 6. `POST /notify`：微信 V2 XML 回调，返回 XML SUCCESS/FAIL。
-7. `POST /api/pc/startup`：携带设备令牌，提交电脑 UUIDv5 `uuid`，完成登记后的身份关联并更新 `last_opened_at`。首次联网登记时间复用 `first_seen`，对外命名 `first_opened_at`。
-8. `POST /api/pc/download-count`：携带设备令牌，提交 `uuid` 和正整数增量 `count`，原子累加成功视频数量。旧版请求附带的 `report_id` 会被忽略，每次收到有效请求都累加；网络回复丢失后的重试可能重复计数。
+7. `POST /api/pc/startup`：携带 `X-Device-UUID`，提交相同的电脑 UUIDv5 `uuid`，更新 `last_opened_at`。首次联网登记时间复用 `first_seen`，对外命名 `first_opened_at`。
+8. `POST /api/pc/download-count`：携带 `X-Device-UUID`，提交相同的 `uuid` 和正整数增量 `count`，原子累加成功视频数量。旧版请求附带的 `report_id` 会被忽略，每次收到有效请求都累加；网络回复丢失后的重试可能重复计数。
 9. `GET /api/pc/stats`：公开汇总 `today_active`、`active_7d`、`active_30d`、`total_users`，另含 UTC `as_of` 和 `Asia/Shanghai` 时区说明。
 10. `GET /stats`：无需登录的四卡片统计页面，提供刷新按钮，调用上述汇总接口。
 11. `GET /videoDown.txt`：无需令牌的更新信息 JSON，保留 `version_number`、`百度`、`夸克`、`info`、`forced_upgrade`，文件缺失或格式错误返回 503。
 
-3–5 和 7–8 携带 `Authorization: Bearer <deviceToken>`。不支持把设备编号当作身份凭证。`payment_kit/api.py` 已自动完成登记、启动上报和请求认证，并在请求中统一携带 `X-Device-UUID`。普通授权查询、下载上报和付款轮询不改变 `last_opened_at`。
+3–5 和 7–8 携带 `X-Device-UUID: <电脑 UUIDv5>`，接口中的设备编号必须与请求身份一致。缺少 UUID 请求头时兼容原 `Authorization: Bearer <deviceToken>`。有效旧令牌可继续完成随机编号到电脑 UUID 的首次关联。`payment_kit/api.py` 自动完成登记及启动上报，新版不发送令牌。普通授权查询、下载上报和付款轮询不改变 `last_opened_at`。
 
 `users` 用户表保留 `id`、`device_id`（业务 `uuid`）、`first_seen`（业务 `first_opened_at`）、`last_opened_at`、`downloaded_video_count` 和 `expires_at`，以及现有内部支付验证字段。尚无统计字段的旧记录，最近打开时间留空、下载总数初始化为 0；已有统计字段及累计数量保留。累计用户数包含旧记录及测试记录；活跃统计从新版启动上报开始，不补造历史数据。近 7／30 天包含今天及前 6／29 个自然日，只靠最近打开时间计算当前范围，不保存历史日活表。
 
