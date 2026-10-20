@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import requests
 
 
-APP_VERSION = '20261017'
+APP_VERSION = '20261020'
 UPDATE_CHECK_URL = (
     'https://douyindown.secs.cc/videoDown.txt'
 )
@@ -17,6 +17,7 @@ class UpdateInfo:
     quark_url: str
     info: str
     forced_upgrade: bool
+    announcement: str = ''
 
 
 def _to_bool(value) -> bool:
@@ -37,6 +38,7 @@ def fetch_update_info(url: str = UPDATE_CHECK_URL, timeout: int = 5) -> UpdateIn
 
     raw_text = response.text.lstrip('\ufeff').strip()
     data = json.loads(raw_text)
+    announcement = data.get('announcement')
 
     return UpdateInfo(
         version_number=str(data.get('version_number', '')).strip(),
@@ -44,6 +46,7 @@ def fetch_update_info(url: str = UPDATE_CHECK_URL, timeout: int = 5) -> UpdateIn
         quark_url=str(data.get('夸克', '')).strip(),
         info=str(data.get('info', '')).strip(),
         forced_upgrade=_to_bool(data.get('forced_upgrade')),
+        announcement=announcement.strip() if isinstance(announcement, str) else '',
     )
 
 

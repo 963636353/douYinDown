@@ -59,6 +59,47 @@ class UpdateInfoTests(unittest.TestCase):
         self.write(changed)
         self.assertEqual(self.client.get("/videoDown.txt").json(), changed)
 
+    def test_announcement_retains_original_fields_for_old_clients(self):
+        notice = '软件公告\n第二行 <b>这是纯文本</b>'
+        self.write(dict(self.data, announcement=notice, private_setting="never-expose"))
+        response = self.client.get("/videoDown.txt")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), dict(self.data, announcement=notice))
+        # 旧客户端仍可按原来的五个字段读取，版本和强制升级设置不变。
+        self.assertEqual({key: response.json()[key] for key in self.data}, self.data)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        with patch("core.update_checker.requests.get", side_effect=self.bridge):
+            self.assertEqual(fetch_update_info().announcement, notice)
+
+    def test_optional_announcement_never_breaks_update_check(self):
+        for value in ("", "  \n\t", None, 42, True, ["公告"], {"text": "公告"}):
+            with self.subTest(value=value):
+                self.write(dict(self.data, announcement=value))
+                response = self.client.get("/videoDown.txt")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual({key: response.json()[key] for key in self.data}, self.data)
+                with patch("core.update_checker.requests.get", side_effect=self.bridge):
+                    self.assertEqual(fetch_update_info().announcement, "")
+        self.write(self.data)
+        with patch("core.update_checker.requests.get", side_effect=self.bridge):
+            self.assertEqual(fetch_update_info().announcement, "")
+
+    def test_client_ignores_invalid_announcement_even_from_another_server(self):
+        for value in (None, 42, True, ["公告"], {"text": "公告"}):
+            response = requests.Response()
+            response.status_code = 200
+            response._content = json.dumps(dict(self.data, announcement=value)).encode()
+            with self.subTest(value=value), patch("core.update_checker.requests.get", return_value=response):
+                parsed = fetch_update_info()
+                self.assertEqual(parsed.announcement, "")
+                self.assertEqual(parsed.version_number, self.data["version_number"])
+
+    def test_announcement_can_be_changed_or_cleared_without_restart(self):
+        for value, expected in (("  第一份公告\n正文  ", "第一份公告\n正文"), ("新公告", "新公告"), ("", "")):
+            self.write(dict(self.data, announcement=value))
+            with patch("core.update_checker.requests.get", side_effect=self.bridge):
+                self.assertEqual(fetch_update_info().announcement, expected)
+
     def test_missing_and_invalid_file_return_uncached_503(self):
         self.path.unlink()
         self.assertEqual(self.client.get("/videoDown.txt").status_code, 503)

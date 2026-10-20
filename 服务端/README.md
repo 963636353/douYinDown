@@ -15,7 +15,7 @@
 - 客户端后台授权验证，使用期限到期后点击下载或失败重试才显示单个窗口，直接选套餐并扫码付款；错误和结果在窗口内显示，付费授权确认后自动继续下载，日常导航不显示授权入口。
 - 独立启动上报、成功视频下载数量累加、持久化待上报队列。服务器收到下载增量后直接累加，不保存去重记录。
 - 公开 `/stats` 页面和 `/api/pc/stats` 汇总接口：今日活跃、近 7 天活跃、近 30 天活跃、累计用户数，范围按北京时间自然日计算。
-- 公开 `/videoDown.txt` 更新信息接口：每次读取项目根目录同名 UTF-8 JSON 文件，禁止缓存，修改保存后无需重启。
+- 公开 `/videoDown.txt` 更新信息接口：每次读取项目根目录同名 UTF-8 JSON 文件，禁止缓存，修改保存后无需重启。可选 `announcement` 提供启动公告；旧客户端忽略该字段，缺失或类型误填不影响原有版本检查。
 
 当前客户端仅通过 `python main.py` 做源码测试，只有用户明确要求发布时才打包。更新信息首次部署只需上传 `payment_server/app.py` 和 `videoDown.txt` 并重启项目，具体步骤见 [更新信息部署](../docs/更新信息部署.md)。
 
@@ -109,7 +109,7 @@ Remove-Item Env:PAYMENT_TRIAL_DAYS -ErrorAction SilentlyContinue
 8. `POST /api/pc/download-count`：携带 `X-Device-UUID`，提交相同的 `uuid` 和正整数增量 `count`，原子累加成功视频数量。旧版请求附带的 `report_id` 会被忽略，每次收到有效请求都累加；网络回复丢失后的重试可能重复计数。
 9. `GET /api/pc/stats`：公开汇总 `today_active`、`active_7d`、`active_30d`、`total_users`，另含 UTC `as_of` 和 `Asia/Shanghai` 时区说明。
 10. `GET /stats`：无需登录的四卡片统计页面，提供刷新按钮，调用上述汇总接口。
-11. `GET /videoDown.txt`：无需令牌的更新信息 JSON，保留 `version_number`、`百度`、`夸克`、`info`、`forced_upgrade`，文件缺失或格式错误返回 503。
+11. `GET /videoDown.txt`：无需令牌的更新信息 JSON，保留 `version_number`、`百度`、`夸克`、`info`、`forced_upgrade`，新增可选纯文本 `announcement`。可选公告缺失或误填时忽略；原有必要字段缺失、文件不存在或格式错误返回 503。已部署接口的公告升级只需覆盖 `app.py`，重启后在原线上 JSON 中追加公告字段，保留线上版本号和链接。
 
 3–5 和 7–8 携带 `X-Device-UUID: <电脑 UUIDv5>`，接口中的设备编号必须与请求身份一致。缺少 UUID 请求头时兼容原 `Authorization: Bearer <deviceToken>`。有效旧令牌可继续完成随机编号到电脑 UUID 的首次关联。`payment_kit/api.py` 自动完成登记及启动上报，新版不发送令牌。普通授权查询、下载上报和付款轮询不改变 `last_opened_at`。
 

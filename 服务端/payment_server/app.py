@@ -109,7 +109,11 @@ def create_app(settings=None, gateway=None):
                 raise ValueError("更新字段格式错误")
             if not isinstance(data["forced_upgrade"], (bool, str)):
                 raise ValueError("强制升级字段格式错误")
-            return JSONResponse({key: data[key] for key in fields}, headers=headers)
+            payload = {key: data[key] for key in fields}
+            # 公告是可选扩展，缺失或误填不影响原有客户端检查版本。
+            if isinstance(data.get("announcement"), str):
+                payload["announcement"] = data["announcement"]
+            return JSONResponse(payload, headers=headers)
         except (OSError, ValueError, TypeError):
             return JSONResponse({"detail": "更新信息文件缺失或格式不正确，请联系管理员"},
                                 status_code=503, headers=headers)

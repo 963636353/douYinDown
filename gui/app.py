@@ -1,7 +1,7 @@
 import threading
 from datetime import datetime
 
-from PyQt5.QtCore import QTimer, QUrl, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtWidgets import QApplication, QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -10,6 +10,8 @@ from qfluentwidgets import (
     FluentWindow,
     MessageBoxBase,
     PushButton,
+    StrongBodyLabel,
+    TextBrowser,
     Theme,
     setTheme,
     setThemeColor,
@@ -102,17 +104,45 @@ class UpdateCheckFailedDialog(MessageBoxBase):
         return
 
 
+class AnnouncementDialog(MessageBoxBase):
+    """每次启动的纯文本公告，长内容在窗口内滚动。"""
+
+    def __init__(self, announcement, parent):
+        super().__init__(parent)
+        self.setWindowTitle('软件公告')
+        self.setClosableOnMaskClicked(True)
+        self.title = StrongBodyLabel('软件公告', self)
+        self.content = TextBrowser(self)
+        self.content.setPlainText(announcement)
+        self.content.setOpenLinks(False)
+        self.content.setOpenExternalLinks(False)
+        self.content.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+        self.content.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        width = min(560, max(280, parent.width() - 48))
+        self.widget.setFixedWidth(width)
+        self.content.document().setTextWidth(width - 72)
+        height = int(self.content.document().size().height()) + 20
+        max_height = min(320, max(80, parent.height() - 220))
+        self.content.setFixedHeight(min(max_height, max(80, height)))
+        self.viewLayout.addWidget(self.title)
+        self.viewLayout.addWidget(self.content)
+        self.yesButton.setText('我知道了')
+        self.hideCancelButton()
+
+
 class MainWindow(FluentWindow):
     """Main application window with QFluentWidgets left navigation."""
 
-    update_available = pyqtSignal(object)
+    update_checked = pyqtSignal(object)
     update_status = pyqtSignal(str)
     update_check_failed = pyqtSignal(str)
 
     def __init__(self, platforms):
         super().__init__()
         self.platforms = platforms
-        self.update_available.connect(self._show_update_dialog)
+        self._startup_notices_handled = False
+        self._closing = False
+        self.update_checked.connect(self._handle_update_info)
         self.update_status.connect(self._status_log)
         self.update_check_failed.connect(self._show_update_check_failed_dialog)
         setTheme(Theme.AUTO)
@@ -218,32 +248,65 @@ class MainWindow(FluentWindow):
             pass
 
     def _start_update_check(self):
+        if self._closing or self._startup_notices_handled:
+            return
         self.update_status.emit('[*] 正在检查软件更新...')
 
         def _worker():
             try:
                 update_info = fetch_update_info()
-                if has_new_version(update_info):
-                    self.update_available.emit(update_info)
-                else:
-                    self.update_status.emit('[OK] 当前已是最新版本')
+                if not self._closing:
+                    self.update_checked.emit(update_info)
             except Exception as exc:
-                self.update_check_failed.emit(str(exc))
+                if not self._closing:
+                    self.update_check_failed.emit(str(exc))
 
         threading.Thread(target=_worker, daemon=True).start()
 
     @pyqtSlot(object)
+    def _handle_update_info(self, update_info):
+        if self._closing or self._startup_notices_handled:
+            return
+        # 在打开模态窗口前标记，重复信号或嵌套事件循环不会叠加公告。
+        self._startup_notices_handled = True
+        if has_new_version(update_info):
+            self._show_update_dialog(update_info)
+            if update_info.forced_upgrade:
+                return
+        else:
+            self._status_log('[OK] 当前已是最新版本')
+        if not self._closing and update_info.announcement:
+            self._show_announcement(update_info.announcement)
+
+    @pyqtSlot(object)
     def _show_update_dialog(self, update_info):
         dialog = UpdateDialog(update_info, self)
-        dialog.exec()
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
         if update_info.forced_upgrade:
             QApplication.quit()
 
+    def _show_announcement(self, announcement):
+        dialog = AnnouncementDialog(announcement, self)
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
+
     @pyqtSlot(str)
     def _show_update_check_failed_dialog(self, reason):
+        if self._closing or self._startup_notices_handled:
+            return
+        self._startup_notices_handled = True
         dialog = UpdateCheckFailedDialog(reason, self)
         dialog.exec()
         QApplication.quit()
+
+    def closeEvent(self, event):
+        self._closing = True
+        super().closeEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
